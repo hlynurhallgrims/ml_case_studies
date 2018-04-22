@@ -1,0 +1,106 @@
+---
+title: "VOTER survey"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(glue)
+library(caret)
+sisters <- read_csv(file = here("data", "sisters67.csv"))
+```
+```{r}
+sisters <- sisters %>% 
+  mutate(age = (v181 + 1) * 10) %>% 
+  select(sister, age, glue("v{116:180}"))
+
+sisters
+```
+
+```{r}
+sisters %>% 
+  ggplot(mapping = aes(x = age)) +
+  geom_histogram(binwidth = 10)
+```
+
+```{r}
+tidy_sisters <- sisters %>% 
+  select(-sister) %>% 
+  gather(key, value, -age)
+
+tidy_sisters %>% 
+  group_by(age) %>% 
+  summarize(medaltal = mean(value, na.rm = TRUE))
+
+tidy_sisters %>% 
+  count(value)
+```
+
+```{r}
+tidy_sisters %>%
+    filter(complete.cases(.),
+           key %in% glue("v{153:170}")) %>%
+    group_by(key, value) %>%
+    summarise(age = mean(age)) %>%
+    ggplot(aes(value, age, color = key)) +
+    geom_path(alpha = 0.5, size = 1.5) +
+    geom_point(size = 2) +
+    facet_wrap(~key) +
+    guides(color = FALSE)
+```
+
+```{r}
+sisters_select <- sisters %>% 
+  select(-sister) %>% 
+  filter(complete.cases(.))
+
+simple_lm <- lm(age ~.,
+                data = sisters_select)
+
+summary(simple_lm)
+```
+
+```{r}
+set.seed(1234)
+in_train <- createDataPartition(sisters_select$age, 
+                                p = 0.6, 
+                                list = FALSE)
+
+training <- sisters_select[in_train, ]
+validation_test <- sisters_select[-in_train, ]
+
+in_test <- createDataPartition(validation_test$age,
+                               p = 0.5,
+                               list = FALSE)
+
+testing <- validation_test[in_test, ]
+validation <- validation_test[-in_test, ]
+
+```
+
+```{r}
+#CART
+sisters_cart <- train(x = select(training, -age),
+                      y = training$age,
+                      method = "rpart")
+
+# ## xgboost
+# sisters_rf <- train(age ~ ., method = "xgbLinear", data = training)
+# 
+# ## gbm
+# sisters_gbm <- train(age ~ ., method = "gbm", data = training)
+```
+
+```{r}
+library(yardstick)
+
+model_results <- validation %>% 
+  mutate(CART = predict(sisters_cart, validation)) 
+
+model_results %>% 
+  metrics(truth = age, estimate = CART)
+```
+
